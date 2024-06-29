@@ -233,21 +233,7 @@ func startSession(addr netip.Addr) (session, error) {
 		var last []byte
 
 		for {
-			var t bool
-			//t = true
-
-			if t {
-				switch bfd.SessionState {
-				case AdminDown:
-					fmt.Print("A")
-				case Down:
-					fmt.Print("D")
-				case Init:
-					fmt.Print("I")
-				case Up:
-					fmt.Print("U")
-				}
-			}
+			//fmt.Print(bfd.SessionState) // debugging
 
 			select {
 			case <-detect.C:
@@ -344,7 +330,7 @@ func startSession(addr netip.Addr) (session, error) {
 
 				// If the A bit is set and no authentication is in use
 				// (bfd.AuthType is zero), the packet MUST be discarded.
-				if b.authentication() {
+				if b.authentication() { // authentication not supported yet
 					continue
 				}
 
@@ -359,7 +345,7 @@ func startSession(addr netip.Addr) (session, error) {
 				// under the rules of section 6.7, based on the
 				// authentication type in use (bfd.AuthType).  This may
 				// cause the packet to be discarded.
-				if b.authentication() {
+				if b.authentication() { // authentication not supported yet
 					continue
 				}
 
@@ -416,15 +402,14 @@ func startSession(addr netip.Addr) (session, error) {
 				}
 
 				// Update the Detection Time as described in section 6.8.4.
-				detectionTime := bfd.DesiredMinTxInterval
-				if bfd.RemoteMinRxInterval > detectionTime {
-					detectionTime = bfd.RemoteMinRxInterval
+				detectionTime := calculateDetectionTime(bfd)
+				if !detect.Stop() {
+					//<-detect.C // uncommenting this breaks - some kind of bug here
 				}
-				detectionTime *= uint32(bfd.DetectMult)
 				detect.Reset(time.Duration(detectionTime) * time.Microsecond)
 
 				if bfd.SessionState == AdminDown {
-					panic("Discard AdminDown")
+					return
 				}
 
 				if b.state() == AdminDown {
@@ -768,6 +753,20 @@ func (b bfd) String() string {
 	)
 }
 
+func (s state) String() string {
+	switch s {
+	case AdminDown:
+		return "A"
+	case Down:
+		return "D"
+	case Init:
+		return "I"
+	case Up:
+		return "U"
+	}
+	return "?"
+}
+
 func checkDemandMode() {
 	// Demand mode is requested independently in each direction by
 	// virtue of a system setting the Demand (D) bit in its BFD Control
@@ -837,4 +836,34 @@ func checkDemandMode() {
 	// mode while the other requires continuous bidirectional connectivity
 	// verification is outside the scope of this specification.
 
+}
+
+// 6.8.4.  Calculating the Detection Time
+func calculateDetectionTime(bfd stateVariables) uint32 {
+
+	// The Detection Time (the period of time without receiving BFD
+	// packets after which the session is determined to have failed)
+	// is not carried explicitly in the protocol.  Rather, it is
+	// calculated independently in each direction by the receiving
+	// system based on the negotiated transmit interval and the
+	// detection multiplier.  Note that there may be different
+	// Detection Times in each direction.
+
+	// The calculation of the Detection Time is slightly different
+	// when in Demand mode versus Asynchronous mode.
+
+	// In Asynchronous mode, the Detection Time calculated in the
+	// local system is equal to the value of Detect Mult received from
+	// the remote system, multiplied by the agreed transmit interval
+	// of the remote system (the greater of bfd.RequiredMinRxInterval
+	// and the last received Desired Min TX Interval).  The Detect
+	// Mult value is (roughly speaking, due to jitter) the number of
+	// packets that have to be missed in a row to declare the session
+	// to be down.
+
+	detectionTime := bfd.DesiredMinTxInterval
+	if bfd.RemoteMinRxInterval > detectionTime {
+		detectionTime = bfd.RemoteMinRxInterval
+	}
+	return detectionTime * uint32(bfd.DetectMult)
 }
