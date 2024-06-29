@@ -250,7 +250,6 @@ func startSession(addr netip.Addr) (session, error) {
 				bfd.SessionState = Down
 				bfd.LocalDiag = 1
 				last = nil
-				fmt.Println("done")
 				return
 
 			case <-timer.C:
