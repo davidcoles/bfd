@@ -3,7 +3,6 @@ package bfd
 import (
 	"context"
 	"fmt"
-	"log"
 	"math/rand"
 	"net"
 	"net/netip"
@@ -16,10 +15,10 @@ import (
 type state uint8
 
 const (
-	AdminDown state = 0
-	Down      state = 1
-	Init      state = 2
-	Up        state = 3
+	_AdminDown state = 0
+	_Down      state = 1
+	_Init      state = 2
+	_Up        state = 3
 )
 
 type BFD struct {
@@ -212,7 +211,7 @@ func startSession(addr netip.Addr) (session, error) {
 		defer close(xmit)
 
 		var bfd stateVariables
-		bfd.SessionState = Down
+		bfd.SessionState = _Down
 		bfd.LocalDiscr = rand.Uint32()
 		bfd.DesiredMinTxInterval = tx * 1000  // convert to BFD timer unit (μs)
 		bfd.RequiredMinRxInterval = rx * 1000 // convert to BFD timer unit (μs)
@@ -237,14 +236,14 @@ func startSession(addr netip.Addr) (session, error) {
 
 			select {
 			case <-detect.C:
-				bfd.SessionState = Down
+				bfd.SessionState = _Down
 				bfd.LocalDiag = 1
 				last = nil
 				return
 
 			case <-timer.C:
 				// why did i do this here???
-				if bfd.SessionState == Down {
+				if bfd.SessionState == _Down {
 					bfd.RemoteDiscr = 0
 				}
 
@@ -313,8 +312,7 @@ func startSession(addr netip.Addr) (session, error) {
 				// If the Your Discriminator field is zero and the State
 				// field is not Down or AdminDown, the packet MUST be
 				// discarded.
-				if b.yourDiscriminator() == 0 && (b.state() != Down && b.state() != AdminDown) {
-					log.Println("b.yourDiscriminator ", b.state(), Down, AdminDown)
+				if b.yourDiscriminator() == 0 && (b.state() != _Down && b.state() != _AdminDown) {
 					continue
 				}
 
@@ -408,18 +406,18 @@ func startSession(addr netip.Addr) (session, error) {
 				}
 				detect.Reset(time.Duration(detectionTime) * time.Microsecond)
 
-				if bfd.SessionState == AdminDown {
+				if bfd.SessionState == _AdminDown {
 					return
 				}
 
-				if b.state() == AdminDown {
+				if b.state() == _AdminDown {
 					//If received state is AdminDown
 					//  If bfd.SessionState is not Down
 					//     Set bfd.LocalDiag to 3 (Neighbor signaled session down)
 					//     Set bfd.SessionState to Down
-					if bfd.SessionState != Down {
+					if bfd.SessionState != _Down {
 						bfd.LocalDiag = 3
-						bfd.SessionState = Down
+						bfd.SessionState = _Down
 					}
 				} else {
 					//Else
@@ -435,20 +433,20 @@ func startSession(addr netip.Addr) (session, error) {
 					//        If received State is Down
 					//            Set bfd.LocalDiag to 3 (Neighbor signaled session down)
 					//            Set bfd.SessionState to Down
-					if bfd.SessionState == Down {
-						if b.state() == Down {
-							bfd.SessionState = Init
-						} else if b.state() == Init {
-							bfd.SessionState = Up
+					if bfd.SessionState == _Down {
+						if b.state() == _Down {
+							bfd.SessionState = _Init
+						} else if b.state() == _Init {
+							bfd.SessionState = _Up
 						}
-					} else if bfd.SessionState == Init {
-						if b.state() == Init || b.state() == Up {
-							bfd.SessionState = Up
+					} else if bfd.SessionState == _Init {
+						if b.state() == _Init || b.state() == _Up {
+							bfd.SessionState = _Up
 						}
 					} else { // (bfd.SessionState is Up)
-						if b.state() == Down {
+						if b.state() == _Down {
 							bfd.LocalDiag = 3
-							bfd.SessionState = Down
+							bfd.SessionState = _Down
 						}
 					}
 				}
@@ -461,7 +459,7 @@ func startSession(addr netip.Addr) (session, error) {
 				// remote system and the local system MUST cease the periodic
 				// transmission of BFD Control packets (see section 6.8.7).
 
-				if bfd.RemoteDemandMode && bfd.SessionState == Up && bfd.RemoteSessionState == Up {
+				if bfd.RemoteDemandMode && bfd.SessionState == _Up && bfd.RemoteSessionState == _Up {
 					interval = 0
 					if !timer.Stop() {
 						<-timer.C
@@ -472,7 +470,7 @@ func startSession(addr netip.Addr) (session, error) {
 				// Up, or bfd.RemoteSessionState is not Up, Demand mode is not
 				// active on the remote system and the local system MUST send
 				// periodic BFD Control packets (see section 6.8.7).
-				if !bfd.RemoteDemandMode || bfd.SessionState != Up || bfd.RemoteSessionState != Up {
+				if !bfd.RemoteDemandMode || bfd.SessionState != _Up || bfd.RemoteSessionState != _Up {
 					if interval == 0 {
 						interval = bfd.DesiredMinTxInterval
 						if !timer.Stop() {
@@ -565,7 +563,7 @@ func (bfd stateVariables) bfd(poll, final bool) bfd {
 	r[1] |= byte(ternary(final, 16, 0)) // Final (F)
 	//r[1] |= 8 // Control Plane Independent (C)
 	//r[1] |= 4 // Authentication Present (A)
-	r[1] |= byte(ternary(bfd.DemandMode && bfd.SessionState == Up && bfd.RemoteSessionState == Up, 2, 0)) // Demand (D)
+	r[1] |= byte(ternary(bfd.DemandMode && bfd.SessionState == _Up && bfd.RemoteSessionState == _Up, 2, 0)) // Demand (D)
 	// r[1] |= 1 // Multipoint (M) - Set to 0
 	r[2] = bfd.DetectMult
 	r[3] = byte(len(r))
@@ -640,7 +638,7 @@ func updateTransmitInterval(bfd stateVariables, poll bool, last []byte) uint32 {
 	// (bfd.RemoteDemandMode is 1, bfd.SessionState is Up, and
 	// bfd.RemoteSessionState is Up) and a Poll Sequence is not being
 	// transmitted.
-	if bfd.RemoteDemandMode && bfd.SessionState == Up && bfd.RemoteSessionState == Up && !poll {
+	if bfd.RemoteDemandMode && bfd.SessionState == _Up && bfd.RemoteSessionState == _Up && !poll {
 		return 0
 	}
 
@@ -755,13 +753,13 @@ func (b bfd) String() string {
 
 func (s state) String() string {
 	switch s {
-	case AdminDown:
+	case _AdminDown:
 		return "A"
-	case Down:
+	case _Down:
 		return "D"
-	case Init:
+	case _Init:
 		return "I"
-	case Up:
+	case _Up:
 		return "U"
 	}
 	return "?"
