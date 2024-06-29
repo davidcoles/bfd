@@ -13,10 +13,14 @@ import (
 	"golang.org/x/net/ipv6"
 )
 
-const AdminDown = 0
-const Down = 1
-const Init = 2
-const Up = 3
+type state uint8
+
+const (
+	AdminDown state = 0
+	Down      state = 1
+	Init      state = 2
+	Up        state = 3
+)
 
 type BFD struct {
 	query chan query
@@ -515,8 +519,8 @@ func startSession(addr netip.Addr) (session, error) {
 }
 
 type stateVariables struct {
-	SessionState          uint8
-	RemoteSessionState    uint8
+	SessionState          state
+	RemoteSessionState    state
 	LocalDiscr            uint32
 	RemoteDiscr           uint32
 	LocalDiag             uint8
@@ -536,7 +540,7 @@ type bfd []byte
 
 func (b bfd) version() uint8                    { return b[0] >> 5 }
 func (b bfd) diag() uint8                       { return b[0] & 31 }
-func (b bfd) state() uint8                      { return b[1] >> 6 }
+func (b bfd) state() state                      { return state(b[1] >> 6) }
 func (b bfd) poll() bool                        { return b[1]&32 > 0 }
 func (b bfd) final() bool                       { return b[1]&16 > 0 }
 func (b bfd) cpi() bool                         { return b[1]&8 > 0 }
@@ -571,7 +575,7 @@ func (bfd stateVariables) bfd(poll, final bool) bfd {
 	var r [24]byte
 
 	r[0] = (byte(1) << 5) | bfd.LocalDiag
-	r[1] |= bfd.SessionState << 6
+	r[1] |= byte(bfd.SessionState << 6)
 	r[1] |= byte(ternary(poll, 32, 0))  // Poll (P)
 	r[1] |= byte(ternary(final, 16, 0)) // Final (F)
 	//r[1] |= 8 // Control Plane Independent (C)
