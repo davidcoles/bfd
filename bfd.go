@@ -51,8 +51,11 @@ func (b *BFD) Start() error {
 	}
 
 	recv := make(chan msg, 1000)
+	b.done = make(chan bool)
 
 	go func() {
+
+		defer conn.Close()
 
 		ipv4.NewPacketConn(conn).SetControlMessage(ipv4.FlagTTL, true)
 		ipv6.NewPacketConn(conn).SetControlMessage(ipv6.FlagHopLimit, true)
@@ -62,6 +65,12 @@ func (b *BFD) Start() error {
 		var oob [128]byte
 
 		for {
+			select {
+			case <-b.done:
+				return
+			default:
+			}
+
 			var buff [1500]byte
 
 			// ReadMsgUDPAddrPort would be better?
@@ -101,8 +110,16 @@ func (b *BFD) Start() error {
 		ticker := time.NewTicker(time.Second)
 		defer ticker.Stop()
 
+		defer func() {
+			for _, c := range sessions {
+				close(c.bfd)
+			}
+		}()
+
 		for {
 			select {
+			case <-b.done:
+				return
 			case q := <-b.query:
 				_, ok := sessions[q.ip]
 				q.up <- ok
@@ -119,11 +136,11 @@ func (b *BFD) Start() error {
 				c, ok := sessions[b.addr]
 
 				if !ok {
-					c, err = startSession(b.addr)
+					xmit, err := udp(b.addr)
 					if err != nil {
-						fmt.Println("session failed", b.addr, err)
-						break
+						break // update a failed counter here?
 					}
+					c = startSession(xmit)
 					sessions[b.addr] = c
 				}
 
@@ -170,6 +187,7 @@ func udp(addr netip.Addr) (chan bfd, error) {
 		return nil, err
 	}
 
+	err = ipv6.NewConn(out).SetHopLimit(255)
 	err = ipv4.NewConn(out).SetTTL(255)
 
 	if err != nil {
@@ -194,11 +212,7 @@ type session struct {
 	ctx context.Context
 }
 
-func startSession(addr netip.Addr) (session, error) {
-	xmit, err := udp(addr)
-	if err != nil {
-		return session{}, err
-	}
+func startSession(xmit chan bfd) session {
 
 	recv := make(chan bfd, 1000)
 	ctx, cancel := context.WithCancel(context.TODO())
@@ -206,6 +220,8 @@ func startSession(addr netip.Addr) (session, error) {
 	go func() {
 		var tx uint32 = 50 // ms
 		var rx uint32 = 20 // ms
+
+		var last bfd
 
 		defer cancel()
 		defer close(xmit)
@@ -229,8 +245,6 @@ func startSession(addr netip.Addr) (session, error) {
 		detect.Stop()
 		defer detect.Stop()
 
-		var last []byte
-
 		for {
 			//fmt.Print(bfd.SessionState) // debugging
 
@@ -249,6 +263,7 @@ func startSession(addr netip.Addr) (session, error) {
 
 				last = bfd.bfd(false, false)
 				xmit <- last
+				//fmt.Println(">>>", last) // debugging
 
 				if interval > 0 {
 					timer.Reset(time.Duration(interval) * time.Microsecond)
@@ -259,7 +274,7 @@ func startSession(addr netip.Addr) (session, error) {
 					return
 				}
 
-				//fmt.Println(b)
+				//fmt.Println("<<<", b) // debugging
 
 				// 6.8.6
 
@@ -301,8 +316,6 @@ func startSession(addr netip.Addr) (session, error) {
 				if b.myDiscriminator() == 0 {
 					continue
 				}
-
-				//fmt.Println("RECV", foo(b))
 
 				// TODO:
 				// If the Your Discriminator field is nonzero, it MUST be used to
@@ -492,13 +505,13 @@ func startSession(addr netip.Addr) (session, error) {
 				// of the Detection Time expiration rules in section 6.8.4.
 
 				if false {
-					fmt.Println(bfd, echo, poll)
+					fmt.Println(bfd, echo, poll) // get keep compiler happy until these are removed
 				}
 			}
 		}
 	}()
 
-	return session{bfd: recv, ctx: ctx}, nil
+	return session{bfd: recv, ctx: ctx}
 }
 
 type stateVariables struct {
@@ -554,26 +567,26 @@ func (b bfd) requiredMinEchoRxInterval() uint32 { return ntohl([4]byte(b[20:24])
 // |                 Required Min Echo RX Interval                 |
 // +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
 
-func (bfd stateVariables) bfd(poll, final bool) bfd {
+func (b stateVariables) bfd(poll, final bool) bfd {
 	var r [24]byte
 
-	r[0] = (byte(1) << 5) | bfd.LocalDiag
-	r[1] |= byte(bfd.SessionState << 6)
+	r[0] = (byte(1) << 5) | b.LocalDiag
+	r[1] |= byte(b.SessionState << 6)
 	r[1] |= byte(ternary(poll, 32, 0))  // Poll (P)
 	r[1] |= byte(ternary(final, 16, 0)) // Final (F)
 	//r[1] |= 8 // Control Plane Independent (C)
 	//r[1] |= 4 // Authentication Present (A)
-	r[1] |= byte(ternary(bfd.DemandMode && bfd.SessionState == _Up && bfd.RemoteSessionState == _Up, 2, 0)) // Demand (D)
+	r[1] |= byte(ternary(b.DemandMode && b.SessionState == _Up && b.RemoteSessionState == _Up, 2, 0)) // Demand (D)
 	// r[1] |= 1 // Multipoint (M) - Set to 0
-	r[2] = bfd.DetectMult
+	r[2] = b.DetectMult
 	r[3] = byte(len(r))
 
-	copy(r[4:8], htonls(bfd.LocalDiscr))
-	copy(r[8:12], htonls(bfd.RemoteDiscr))
-	copy(r[12:16], htonls(bfd.DesiredMinTxInterval))
-	copy(r[16:20], htonls(bfd.RequiredMinRxInterval))
+	copy(r[4:8], htonls(b.LocalDiscr))
+	copy(r[8:12], htonls(b.RemoteDiscr))
+	copy(r[12:16], htonls(b.DesiredMinTxInterval))
+	copy(r[16:20], htonls(b.RequiredMinRxInterval))
 	copy(r[20:24], htonls(0)) // If this field is set to zero, the local system is unwilling or unable to loop back BFD Echo
-	return r[:]
+	return bfd(r[:])
 }
 
 func updateTransmitInterval(bfd stateVariables, poll bool, last []byte) uint32 {

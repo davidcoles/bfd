@@ -26,7 +26,7 @@ func main() {
 
     for {
         fmt.Println(ip, bfd.Query(ip))
-	time.Sleep(time.Second)
+        time.Sleep(time.Second)
     }
 }
 ```
