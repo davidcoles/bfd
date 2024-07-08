@@ -12,15 +12,6 @@ import (
 	"golang.org/x/net/ipv6"
 )
 
-type state uint8
-
-const (
-	_AdminDown state = 0
-	_Down      state = 1
-	_Init      state = 2
-	_Up        state = 3
-)
-
 type BFD struct {
 	query chan query
 	done  chan bool
@@ -187,8 +178,11 @@ func udp(addr netip.Addr) (chan bfd, error) {
 		return nil, err
 	}
 
-	err = ipv6.NewConn(out).SetHopLimit(255)
-	err = ipv4.NewConn(out).SetTTL(255)
+	if addr.Is4() {
+		err = ipv4.NewConn(out).SetTTL(255)
+	} else {
+		err = ipv6.NewConn(out).SetHopLimit(255)
+	}
 
 	if err != nil {
 		return nil, err
@@ -512,81 +506,6 @@ func startSession(xmit chan bfd) session {
 	}()
 
 	return session{bfd: recv, ctx: ctx}
-}
-
-type stateVariables struct {
-	SessionState          state
-	RemoteSessionState    state
-	LocalDiscr            uint32
-	RemoteDiscr           uint32
-	LocalDiag             uint8
-	DesiredMinTxInterval  uint32
-	RequiredMinRxInterval uint32
-	RemoteMinRxInterval   uint32
-	DemandMode            bool
-	RemoteDemandMode      bool
-	DetectMult            uint8
-	AuthType              int
-	//RcvAuthSeq
-	//XmitAuthSeq
-	//AuthSeqKnown
-}
-
-type bfd []byte
-
-func (b bfd) version() uint8                    { return b[0] >> 5 }
-func (b bfd) diag() uint8                       { return b[0] & 31 }
-func (b bfd) state() state                      { return state(b[1] >> 6) }
-func (b bfd) poll() bool                        { return b[1]&32 > 0 }
-func (b bfd) final() bool                       { return b[1]&16 > 0 }
-func (b bfd) cpi() bool                         { return b[1]&8 > 0 }
-func (b bfd) authentication() bool              { return b[1]&4 > 0 }
-func (b bfd) demand() bool                      { return b[1]&2 > 0 }
-func (b bfd) multipoint() bool                  { return b[1]&1 > 0 }
-func (b bfd) detectMult() uint8                 { return b[2] }
-func (b bfd) length() uint8                     { return b[3] }
-func (b bfd) myDiscriminator() uint32           { return ntohl([4]byte(b[4:8])) }
-func (b bfd) yourDiscriminator() uint32         { return ntohl([4]byte(b[8:12])) }
-func (b bfd) desiredMinTxInterval() uint32      { return ntohl([4]byte(b[12:16])) }
-func (b bfd) requiredMinRxInterval() uint32     { return ntohl([4]byte(b[16:20])) }
-func (b bfd) requiredMinEchoRxInterval() uint32 { return ntohl([4]byte(b[20:24])) }
-
-//  0                   1                   2                   3
-//  0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
-// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-// |Vers |  Diag   |Sta|P|F|C|A|D|M|  Detect Mult  |    Length     |
-// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-// |                       My Discriminator                        |
-// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-// |                      Your Discriminator                       |
-// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-// |                    Desired Min TX Interval                    |
-// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-// |                   Required Min RX Interval                    |
-// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-// |                 Required Min Echo RX Interval                 |
-// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-
-func (b stateVariables) bfd(poll, final bool) bfd {
-	var r [24]byte
-
-	r[0] = (byte(1) << 5) | b.LocalDiag
-	r[1] |= byte(b.SessionState << 6)
-	r[1] |= byte(ternary(poll, 32, 0))  // Poll (P)
-	r[1] |= byte(ternary(final, 16, 0)) // Final (F)
-	//r[1] |= 8 // Control Plane Independent (C)
-	//r[1] |= 4 // Authentication Present (A)
-	r[1] |= byte(ternary(b.DemandMode && b.SessionState == _Up && b.RemoteSessionState == _Up, 2, 0)) // Demand (D)
-	// r[1] |= 1 // Multipoint (M) - Set to 0
-	r[2] = b.DetectMult
-	r[3] = byte(len(r))
-
-	copy(r[4:8], htonls(b.LocalDiscr))
-	copy(r[8:12], htonls(b.RemoteDiscr))
-	copy(r[12:16], htonls(b.DesiredMinTxInterval))
-	copy(r[16:20], htonls(b.RequiredMinRxInterval))
-	copy(r[20:24], htonls(0)) // If this field is set to zero, the local system is unwilling or unable to loop back BFD Echo
-	return bfd(r[:])
 }
 
 func updateTransmitInterval(bfd stateVariables, poll bool, last []byte) uint32 {
