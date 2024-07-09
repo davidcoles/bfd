@@ -1,5 +1,10 @@
 package bfd
 
+import (
+	"math/rand"
+	"time"
+)
+
 type state uint8
 
 const (
@@ -10,6 +15,9 @@ const (
 )
 
 type stateVariables struct {
+	_intervalTime  time.Duration
+	_detectionTime time.Duration
+
 	SessionState          state
 	RemoteSessionState    state
 	LocalDiscr            uint32
@@ -27,6 +35,7 @@ type stateVariables struct {
 	//AuthSeqKnown
 }
 
+type ControlPacket = bfd
 type bfd []byte
 
 func (b bfd) version() uint8                    { return b[0] >> 5 }
@@ -128,10 +137,6 @@ func (b stateVariables) bfd(poll, final bool) bfd {
 //    the Trust Legal Provisions and are provided without warranty as
 //    described in the Simplified BSD License.
 
-// Katz & Ward                  Standards Track                    [Page 1]
-//
-// RFC 5880           Bidirectional Forwarding Detection          June 2010
-
 // Table of Contents
 
 //    1. Introduction ....................................................3
@@ -181,10 +186,6 @@ func (b stateVariables) bfd(poll, final bool) bfd {
 //            6.8.17. Concatenated Paths ................................41
 //            6.8.18. Holding Down Sessions .............................42
 
-// Katz & Ward                  Standards Track                    [Page 2]
-//
-// RFC 5880           Bidirectional Forwarding Detection          June 2010
-
 //    7. Operational Considerations .....................................43
 //    8. IANA Considerations ............................................44
 //    9. Security Considerations ........................................45
@@ -232,10 +233,6 @@ func (b stateVariables) bfd(poll, final bool) bfd {
 //    some mechanisms are application dependent and are specified in a
 //    separate series of application documents.  These issues are so noted.
 
-// Katz & Ward                  Standards Track                    [Page 3]
-//
-// RFC 5880           Bidirectional Forwarding Detection          June 2010
-
 //    Note that many of the exact mechanisms are implementation dependent
 //    and will not affect interoperability, and are thus outside the scope
 //    of this specification.  Those issues are so noted.
@@ -279,10 +276,6 @@ func (b stateVariables) bfd(poll, final bool) bfd {
 //    The BFD state machine implements a three-way handshake, both when
 //    establishing a BFD session and when tearing it down for any reason,
 //    to ensure that both systems are aware of the state change.
-
-// Katz & Ward                  Standards Track                    [Page 4]
-//
-// RFC 5880           Bidirectional Forwarding Detection          June 2010
 
 //    BFD can be abstracted as a simple service.  The service primitives
 //    provided by BFD are to create, destroy, and modify a session, given
@@ -332,10 +325,6 @@ func (b stateVariables) bfd(poll, final bool) bfd {
 //    additional function that can be used in combination with the two
 //    modes.
 
-// Katz & Ward                  Standards Track                    [Page 5]
-//
-// RFC 5880           Bidirectional Forwarding Detection          June 2010
-
 //    The primary mode is known as Asynchronous mode.  In this mode, the
 //    systems periodically send BFD Control packets to one another, and if
 //    a number of those packets in a row are not received by the other
@@ -383,10 +372,6 @@ func (b stateVariables) bfd(poll, final bool) bfd {
 //    being used symmetrically.  Demand mode has the disadvantage that
 //    Detection Times are essentially driven by the heuristics of the
 //    system implementation and are not known to the BFD protocol.  Demand
-
-// Katz & Ward                  Standards Track                    [Page 6]
-//
-// RFC 5880           Bidirectional Forwarding Detection          June 2010
 
 //    mode may not be used when the path round-trip time is greater than
 //    the desired Detection Time, or the protocol will fail to work
@@ -437,10 +422,6 @@ func (b stateVariables) bfd(poll, final bool) bfd {
 //       The version number of the protocol.  This document defines
 //       protocol version 1.
 
-// Katz & Ward                  Standards Track                    [Page 7]
-//
-// RFC 5880           Bidirectional Forwarding Detection          June 2010
-
 //    Diagnostic (Diag)
 
 //       A diagnostic code specifying the local system's reason for the
@@ -482,10 +463,6 @@ func (b stateVariables) bfd(poll, final bool) bfd {
 //       If set, the transmitting system is responding to a received BFD
 //       Control packet that had the Poll (P) bit set.  If clear, the
 //       transmitting system is not responding to a Poll.
-
-// Katz & Ward                  Standards Track                    [Page 8]
-//
-// RFC 5880           Bidirectional Forwarding Detection          June 2010
 
 //    Control Plane Independent (C)
 
@@ -534,10 +511,6 @@ func (b stateVariables) bfd(poll, final bool) bfd {
 //       transmitting system, used to demultiplex multiple BFD sessions
 //       between the same pair of systems.
 
-// Katz & Ward                  Standards Track                    [Page 9]
-//
-// RFC 5880           Bidirectional Forwarding Detection          June 2010
-
 //    Your Discriminator
 
 //       The discriminator received from the corresponding remote system.
@@ -584,10 +557,6 @@ func (b stateVariables) bfd(poll, final bool) bfd {
 
 //       The length, in bytes, of the authentication section, including the
 //       Auth Type and Auth Len fields.
-
-// Katz & Ward                  Standards Track                   [Page 10]
-//
-// RFC 5880           Bidirectional Forwarding Detection          June 2010
 
 // 4.2.  Simple Password Authentication Section Format
 
@@ -636,10 +605,6 @@ func (b stateVariables) bfd(poll, final bool) bfd {
 //    Authentication Type field contains 2 (Keyed MD5) or 3 (Meticulous
 //    Keyed MD5), the Authentication Section has the following format:
 
-// Katz & Ward                  Standards Track                   [Page 11]
-//
-// RFC 5880           Bidirectional Forwarding Detection          June 2010
-
 //     0                   1                   2                   3
 //     0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
 //    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
@@ -686,10 +651,6 @@ func (b stateVariables) bfd(poll, final bool) bfd {
 //       field, padded to 16 bytes with trailing zero bytes if needed.  The
 //       shared key MUST be encoded and configured to section 6.7.3.
 
-// Katz & Ward                  Standards Track                   [Page 12]
-//
-// RFC 5880           Bidirectional Forwarding Detection          June 2010
-
 // 4.4.  Keyed SHA1 and Meticulous Keyed SHA1 Authentication Section Format
 
 //    If the Authentication Present (A) bit is set in the header, and the
@@ -734,10 +695,6 @@ func (b stateVariables) bfd(poll, final bool) bfd {
 //       Meticulous Keyed SHA1 Authentication, this value is incremented
 //       for each successive packet transmitted for a session.  This
 //       provides protection against replay attacks.
-
-// Katz & Ward                  Standards Track                   [Page 13]
-//
-// RFC 5880           Bidirectional Forwarding Detection          June 2010
 
 //    Auth Key/Hash
 
@@ -788,10 +745,6 @@ func (b stateVariables) bfd(poll, final bool) bfd {
 //    system takes is specific to the application of BFD, and is outside
 //    the scope of this specification.
 
-// Katz & Ward                  Standards Track                   [Page 14]
-//
-// RFC 5880           Bidirectional Forwarding Detection          June 2010
-
 //    A session begins with the periodic, slow transmission of BFD Control
 //    packets.  When bidirectional communication is achieved, the BFD
 //    session becomes Up.
@@ -835,10 +788,6 @@ func (b stateVariables) bfd(poll, final bool) bfd {
 //    A session MAY be kept administratively down by entering the AdminDown
 //    state and sending an explanatory diagnostic code in the Diagnostic
 //    field.
-
-// Katz & Ward                  Standards Track                   [Page 15]
-//
-// RFC 5880           Bidirectional Forwarding Detection          June 2010
 
 // 6.2.  BFD State Machine
 
@@ -884,10 +833,6 @@ func (b stateVariables) bfd(poll, final bool) bfd {
 //    either the remote system signals Down state or the Detection Time
 //    expires, the session advances to Down state.
 
-// Katz & Ward                  Standards Track                   [Page 16]
-//
-// RFC 5880           Bidirectional Forwarding Detection          June 2010
-
 //    AdminDown state means that the session is being held administratively
 //    down.  This causes the remote system to enter Down state, and remain
 //    there until the local system exits AdminDown state.  AdminDown state
@@ -931,10 +876,6 @@ func (b stateVariables) bfd(poll, final bool) bfd {
 //    system.  The local discriminator is sent in the My Discriminator
 //    field in the BFD Control packet, and is echoed back in the Your
 //    Discriminator field of packets sent from the remote end.
-
-// Katz & Ward                  Standards Track                   [Page 17]
-//
-// RFC 5880           Bidirectional Forwarding Detection          June 2010
 
 //    Once the remote end echoes back the local discriminator, all further
 //    received packets are demultiplexed based on the Your Discriminator
@@ -980,10 +921,6 @@ func (b stateVariables) bfd(poll, final bool) bfd {
 //    transmission rate.  Note that a system is committing to be able to
 //    receive both streams of packets at the rate it advertises, so this
 //    should be taken into account when choosing the values to advertise.
-
-// Katz & Ward                  Standards Track                   [Page 18]
-//
-// RFC 5880           Bidirectional Forwarding Detection          June 2010
 
 // 6.5.  The Poll Sequence
 
@@ -1033,10 +970,6 @@ func (b stateVariables) bfd(poll, final bool) bfd {
 //    receipt of traffic from the remote system; another is the use of the
 //    Echo function.
 
-// Katz & Ward                  Standards Track                   [Page 19]
-//
-// RFC 5880           Bidirectional Forwarding Detection          June 2010
-
 //    When a system in Demand mode wishes to verify bidirectional
 //    connectivity, it initiates a Poll Sequence (see section 6.5).  If no
 //    response is received to a Poll, the Poll is repeated until the
@@ -1084,10 +1017,6 @@ func (b stateVariables) bfd(poll, final bool) bfd {
 //    time prior to the initiation of the Poll Sequence, plus the
 //    calculated Detection Time.
 
-// Katz & Ward                  Standards Track                   [Page 20]
-//
-// RFC 5880           Bidirectional Forwarding Detection          June 2010
-
 //    Note that if Demand mode is enabled in only one direction, continuous
 //    bidirectional connectivity verification is lost (only connectivity in
 //    the direction from the system in Demand mode to the other system will
@@ -1134,10 +1063,6 @@ func (b stateVariables) bfd(poll, final bool) bfd {
 //    authentication is either turned on or turned off, because the packet
 //    acceptance rules essentially require the local and remote machines to
 
-// Katz & Ward                  Standards Track                   [Page 21]
-//
-// RFC 5880           Bidirectional Forwarding Detection          June 2010
-
 //    do so in a more or less synchronized fashion (within the Detection
 //    Time) -- a packet with authentication will only be accepted if
 //    authentication is "in use" (and likewise packets without
@@ -1182,10 +1107,6 @@ func (b stateVariables) bfd(poll, final bool) bfd {
 //       the password is configured MUST accept ASCII strings, and SHOULD
 //       also allow for the configuration of any arbitrary binary string in
 //       hexadecimal form.  Other configuration methods MAY be supported.
-
-// Katz & Ward                  Standards Track                   [Page 22]
-//
-// RFC 5880           Bidirectional Forwarding Detection          June 2010
 
 //    Reception Using Simple Password Authentication
 
@@ -1235,10 +1156,6 @@ func (b stateVariables) bfd(poll, final bool) bfd {
 //       trailing zero bytes as necessary.  For interoperability, the
 //       management interface by which the key is configured MUST accept
 
-// Katz & Ward                  Standards Track                   [Page 23]
-//
-// RFC 5880           Bidirectional Forwarding Detection          June 2010
-
 //       ASCII strings, and SHOULD also allow for the configuration of any
 //       arbitrary binary string in hexadecimal form.  Other configuration
 //       methods MAY be supported.
@@ -1286,10 +1203,6 @@ func (b stateVariables) bfd(poll, final bool) bfd {
 //       Otherwise (bfd.AuthSeqKnown is 0), bfd.AuthSeqKnown MUST be set to
 //       1, and bfd.RcvAuthSeq MUST be set to the value of the received
 //       Sequence Number field.
-
-// Katz & Ward                  Standards Track                   [Page 24]
-//
-// RFC 5880           Bidirectional Forwarding Detection          June 2010
 
 //       Replace the contents of the Auth Key/Digest field with the
 //       authentication key selected by the received Auth Key ID field.  If
@@ -1339,10 +1252,6 @@ func (b stateVariables) bfd(poll, final bool) bfd {
 //       to transmission (replacing the secret key, which MUST NOT be
 //       carried in the packet).
 
-// Katz & Ward                  Standards Track                   [Page 25]
-//
-// RFC 5880           Bidirectional Forwarding Detection          June 2010
-
 //       For Keyed SHA1, bfd.XmitAuthSeq MAY be incremented in a circular
 //       fashion (when treated as an unsigned 32-bit value).
 //       bfd.XmitAuthSeq SHOULD be incremented when the session state
@@ -1389,10 +1298,6 @@ func (b stateVariables) bfd(poll, final bool) bfd {
 //       MUST be accepted.  Otherwise (the hash does not match the Auth
 //       Key/Hash field), the received packet MUST be discarded.
 
-// Katz & Ward                  Standards Track                   [Page 26]
-//
-// RFC 5880           Bidirectional Forwarding Detection          June 2010
-
 // 6.8.  Functional Specifics
 
 //    The following section of this specification is normative.  The means
@@ -1438,10 +1343,6 @@ func (b stateVariables) bfd(poll, final bool) bfd {
 //    session have been received from the remote system is outside the
 //    scope of this specification.
 
-// Katz & Ward                  Standards Track                   [Page 27]
-//
-// RFC 5880           Bidirectional Forwarding Detection          June 2010
-
 //    All state variables in this specification are of the form "bfd.Xx"
 //    and should not be confused with fields carried in the protocol
 //    packets, which are always spelled out to match the names in section
@@ -1484,10 +1385,6 @@ func (b stateVariables) bfd(poll, final bool) bfd {
 //       The diagnostic code specifying the reason for the most recent
 //       change in the local session state.  This MUST be initialized to
 //       zero (No Diagnostic).
-
-// Katz & Ward                  Standards Track                   [Page 28]
-//
-// RFC 5880           Bidirectional Forwarding Detection          June 2010
 
 //    bfd.DesiredMinTxInterval
 
@@ -1535,10 +1432,6 @@ func (b stateVariables) bfd(poll, final bool) bfd {
 //       MUST be a nonzero integer, and is otherwise outside the scope of
 //       this specification.  See section 6.8.4 for further information.
 
-// Katz & Ward                  Standards Track                   [Page 29]
-//
-// RFC 5880           Bidirectional Forwarding Detection          June 2010
-
 //    bfd.AuthType
 
 //       The authentication type in use for this session, as defined in
@@ -1568,23 +1461,25 @@ func (b stateVariables) bfd(poll, final bool) bfd {
 //       remote system restarts.
 
 // 6.8.2.  Timer Negotiation
+func timerNegotiation(bfd stateVariables, last ControlPacket) (time.Duration, ControlPacket) {
 
-//    The time values used to determine BFD packet transmission intervals
-//    and the session Detection Time are continuously negotiated, and thus
-//    may be changed at any time.  The negotiation and time values are
-//    independent in each direction for each session.
+	//    The time values used to determine BFD packet transmission intervals
+	//    and the session Detection Time are continuously negotiated, and thus
+	//    may be changed at any time.  The negotiation and time values are
+	//    independent in each direction for each session.
 
-//    Each system reports in the BFD Control packet how rapidly it would
-//    like to transmit BFD packets, as well as how rapidly it is prepared
-//    to receive them.  This allows either system to unilaterally determine
-//    the maximum packet rate (minimum interval) in both directions.
+	//    Each system reports in the BFD Control packet how rapidly it would
+	//    like to transmit BFD packets, as well as how rapidly it is prepared
+	//    to receive them.  This allows either system to unilaterally determine
+	//    the maximum packet rate (minimum interval) in both directions.
 
-//    See section 6.8.7 for the details of packet transmission timing and
-//    negotiation.
+	//    See section 6.8.7 for the details of packet transmission timing and
+	//    negotiation.
 
-// Katz & Ward                  Standards Track                   [Page 30]
-//
-// RFC 5880           Bidirectional Forwarding Detection          June 2010
+	interval, cp := transmitingBFDControlPackets(bfd, last, false)
+
+	return time.Duration(interval), cp
+}
 
 // 6.8.3.  Timer Manipulation
 
@@ -1632,10 +1527,6 @@ func (b stateVariables) bfd(poll, final bool) bfd {
 //    significantly shorter), the local system MUST send the next periodic
 //    BFD Control packet as soon as practicable.
 
-// Katz & Ward                  Standards Track                   [Page 31]
-//
-// RFC 5880           Bidirectional Forwarding Detection          June 2010
-
 //    When the Echo function is active, a system SHOULD set
 //    bfd.RequiredMinRxInterval to a value of not less than one second
 //    (1,000,000 microseconds).  This is intended to keep received BFD
@@ -1662,51 +1553,69 @@ func (b stateVariables) bfd(poll, final bool) bfd {
 //    option is not available when Demand mode is active).
 
 // 6.8.4.  Calculating the Detection Time
+func detectionTime(bfd stateVariables, lastReceivedDesiredMinTxInterval uint32) time.Duration {
+	var demandMode bool // FIXME - determine this
 
-//    The Detection Time (the period of time without receiving BFD packets
-//    after which the session is determined to have failed) is not carried
-//    explicitly in the protocol.  Rather, it is calculated independently
-//    in each direction by the receiving system based on the negotiated
-//    transmit interval and the detection multiplier.  Note that there may
-//    be different Detection Times in each direction.
+	// The Detection Time (the period of time without receiving BFD
+	// packets after which the session is determined to have failed)
+	// is not carried explicitly in the protocol.  Rather, it is
+	// calculated independently in each direction by the receiving
+	// system based on the negotiated transmit interval and the
+	// detection multiplier.  Note that there may be different
+	// Detection Times in each direction.
 
-//    The calculation of the Detection Time is slightly different when in
-//    Demand mode versus Asynchronous mode.
+	// The calculation of the Detection Time is slightly different
+	// when in Demand mode versus Asynchronous mode.
 
-//    In Asynchronous mode, the Detection Time calculated in the local
-//    system is equal to the value of Detect Mult received from the remote
-//    system, multiplied by the agreed transmit interval of the remote
-//    system (the greater of bfd.RequiredMinRxInterval and the last
-//    received Desired Min TX Interval).  The Detect Mult value is (roughly
-//    speaking, due to jitter) the number of packets that have to be missed
-//    in a row to declare the session to be down.
+	// In Asynchronous mode, the Detection Time calculated in the
+	// local system is equal to the value of Detect Mult received from
+	// the remote system, multiplied by the agreed transmit interval
+	// of the remote system (the greater of bfd.RequiredMinRxInterval
+	// and the last received Desired Min TX Interval).  The Detect
+	// Mult value is (roughly speaking, due to jitter) the number of
+	// packets that have to be missed in a row to declare the session
+	// to be down.
 
-// Katz & Ward                  Standards Track                   [Page 32]
-//
-// RFC 5880           Bidirectional Forwarding Detection          June 2010
+	//** FIXME - asynchronousMode is defeine as not being in demand mode?
 
-//    If Demand mode is not active, and a period of time equal to the
-//    Detection Time passes without receiving a BFD Control packet from the
-//    remote system, and bfd.SessionState is Init or Up, the session has
-//    gone down -- the local system MUST set bfd.SessionState to Down and
-//    bfd.LocalDiag to 1 (Control Detection Time Expired).
+	if !demandMode {
+		if lastReceivedDesiredMinTxInterval > bfd.RequiredMinRxInterval {
+			return time.Duration(uint32(bfd.DetectMult) * lastReceivedDesiredMinTxInterval)
+		}
+		return time.Duration(uint32(bfd.DetectMult) * bfd.RequiredMinRxInterval)
+	}
 
-//    In Demand mode, the Detection Time calculated in the local system is
-//    equal to bfd.DetectMult, multiplied by the agreed transmit interval
-//    of the local system (the greater of bfd.DesiredMinTxInterval and
-//    bfd.RemoteMinRxInterval).  bfd.DetectMult is (roughly speaking, due
-//    to jitter) the number of packets that have to be missed in a row to
-//    declare the session to be down.
+	// If Demand mode is not active, and a period of time equal to the
+	// Detection Time passes without receiving a BFD Control packet
+	// from the remote system, and bfd.SessionState is Init or Up, the
+	// session has gone down -- the local system MUST set
+	// bfd.SessionState to Down and bfd.LocalDiag to 1 (Control
+	// Detection Time Expired).
 
-//    If Demand mode is active, and a period of time equal to the Detection
-//    Time passes after the initiation of a Poll Sequence (the transmission
-//    of the first BFD Control packet with the Poll bit set), the session
-//    has gone down -- the local system MUST set bfd.SessionState to Down,
-//    and bfd.LocalDiag to 1 (Control Detection Time Expired).
+	// In Demand mode, the Detection Time calculated in the local
+	// system is equal to bfd.DetectMult, multiplied by the agreed
+	// transmit interval of the local system (the greater of
+	// bfd.DesiredMinTxInterval and bfd.RemoteMinRxInterval).
+	// bfd.DetectMult is (roughly speaking, due to jitter) the number
+	// of packets that have to be missed in a row to declare the
+	// session to be down.
 
-//    (Note that a packet is considered to have been received, for the
-//    purposes of Detection Time expiration, only if it has not been
-//    "discarded" according to the rules of section 6.8.6).
+	if bfd.DesiredMinTxInterval > bfd.RemoteMinRxInterval {
+		return time.Duration(uint32(bfd.DetectMult) * bfd.DesiredMinTxInterval)
+	}
+	return time.Duration(uint32(bfd.DetectMult) * bfd.RemoteMinRxInterval)
+
+	// If Demand mode is active, and a period of time equal to the
+	// Detection Time passes after the initiation of a Poll Sequence
+	// (the transmission of the first BFD Control packet with the Poll
+	// bit set), the session has gone down -- the local system MUST
+	// set bfd.SessionState to Down, and bfd.LocalDiag to 1 (Control
+	// Detection Time Expired).
+
+	// (Note that a packet is considered to have been received, for
+	// the purposes of Detection Time expiration, only if it has not
+	// been "discarded" according to the rules of section 6.8.6).
+}
 
 // 6.8.5.  Detecting Failures with the Echo Function
 
@@ -1720,289 +1629,450 @@ func (b stateVariables) bfd(poll, final bool) bfd {
 //    communication failure are acceptable.
 
 // 6.8.6.  Reception of BFD Control Packets
+func receptionOfBFDControlPackets(state stateVariables, p, last ControlPacket) (bfd stateVariables, cp []byte, accepted bool) {
+	var poll, echo bool
 
-//    When a BFD Control packet is received, the following procedure MUST
-//    be followed, in the order specified.  If the packet is discarded
-//    according to these rules, processing of the packet MUST cease at that
-//    point.
+	bfd = state
 
-//       If the version number is not correct (1), the packet MUST be
-//       discarded.
+	// When a BFD Control packet is received, the following procedure
+	// MUST be followed, in the order specified.  If the packet is
+	// discarded according to these rules, processing of the packet
+	// MUST cease at that point.
 
-//       If the Length field is less than the minimum correct value (24 if
-//       the A bit is clear, or 26 if the A bit is set), the packet MUST be
-//       discarded.
+	// If the version number is not correct (1), the packet MUST be
+	// discarded.
 
-// Katz & Ward                  Standards Track                   [Page 33]
-//
-// RFC 5880           Bidirectional Forwarding Detection          June 2010
+	if p.version() != 1 {
+		return
+	}
 
-//       If the Length field is greater than the payload of the
-//       encapsulating protocol, the packet MUST be discarded.
+	// If the Length field is less than the minimum correct value (24
+	// if the A bit is clear, or 26 if the A bit is set), the packet
+	// MUST be discarded.
 
-//       If the Detect Mult field is zero, the packet MUST be discarded.
+	if p.length() < 24 || (p.authentication() && p.length() < 26) {
+		return
+	}
 
-//       If the Multipoint (M) bit is nonzero, the packet MUST be
-//       discarded.
+	// If the Length field is greater than the payload of the
+	// encapsulating protocol, the packet MUST be discarded.
 
-//       If the My Discriminator field is zero, the packet MUST be
-//       discarded.
+	//** HANDLED UPSTREAM
 
-//       If the Your Discriminator field is nonzero, it MUST be used to
-//       select the session with which this BFD packet is associated.  If
-//       no session is found, the packet MUST be discarded.
+	// If the Detect Mult field is zero, the packet MUST be discarded.
 
-//       If the Your Discriminator field is zero and the State field is not
-//       Down or AdminDown, the packet MUST be discarded.
+	if p.detectMult() == 0 {
+		return
+	}
 
-//       If the Your Discriminator field is zero, the session MUST be
-//       selected based on some combination of other fields, possibly
-//       including source addressing information, the My Discriminator
-//       field, and the interface over which the packet was received.  The
-//       exact method of selection is application specific and is thus
-//       outside the scope of this specification.  If a matching session is
-//       not found, a new session MAY be created, or the packet MAY be
-//       discarded.  This choice is outside the scope of this
-//       specification.
+	// If the Multipoint (M) bit is nonzero, the packet MUST be
+	// discarded.
 
-//       If the A bit is set and no authentication is in use (bfd.AuthType
-//       is zero), the packet MUST be discarded.
+	if p.multipoint() {
+		return
+	}
 
-//       If the A bit is clear and authentication is in use (bfd.AuthType
-//       is nonzero), the packet MUST be discarded.
+	// If the My Discriminator field is zero, the packet MUST be
+	// discarded.
 
-//       If the A bit is set, the packet MUST be authenticated under the
-//       rules of section 6.7, based on the authentication type in use
-//       (bfd.AuthType).  This may cause the packet to be discarded.
+	if p.myDiscriminator() == 0 {
+		return
+	}
 
-//       Set bfd.RemoteDiscr to the value of My Discriminator.
+	// If the Your Discriminator field is nonzero, it MUST be used to
+	// select the session with which this BFD packet is associated.
+	// If no session is found, the packet MUST be discarded.
 
-//       Set bfd.RemoteState to the value of the State (Sta) field.
+	//** HANDLED UPSTREAM
 
-//       Set bfd.RemoteDemandMode to the value of the Demand (D) bit.
+	// If the Your Discriminator field is zero and the State field is not
+	// Down or AdminDown, the packet MUST be discarded.
 
-//       Set bfd.RemoteMinRxInterval to the value of Required Min RX
-//       Interval.
+	if p.yourDiscriminator() == 0 && (p.state() != _Down && p.state() != _AdminDown) {
+		return
+	}
 
-// Katz & Ward                  Standards Track                   [Page 34]
-//
-// RFC 5880           Bidirectional Forwarding Detection          June 2010
+	// If the Your Discriminator field is zero, the session MUST be
+	// selected based on some combination of other fields, possibly
+	// including source addressing information, the My Discriminator
+	// field, and the interface over which the packet was received.
+	// The exact method of selection is application specific and is
+	// thus outside the scope of this specification.  If a matching
+	// session is not found, a new session MAY be created, or the
+	// packet MAY be discarded.  This choice is outside the scope of
+	// this specification.
 
-//       If the Required Min Echo RX Interval field is zero, the
-//       transmission of Echo packets, if any, MUST cease.
+	//** HANDLED UPSTREAM
 
-//       If a Poll Sequence is being transmitted by the local system and
-//       the Final (F) bit in the received packet is set, the Poll Sequence
-//       MUST be terminated.
+	// If the A bit is set and no authentication is in use
+	// (bfd.AuthType is zero), the packet MUST be discarded.
 
-//       Update the transmit interval as described in section 6.8.2.
+	if p.authentication() && bfd.AuthType == 0 {
+		return
+	}
 
-//       Update the Detection Time as described in section 6.8.4.
+	// If the A bit is clear and authentication is in use (bfd.AuthType
+	// is nonzero), the packet MUST be discarded.
 
-//       If bfd.SessionState is AdminDown
+	if !p.authentication() && bfd.AuthType != 0 {
+		return
+	}
 
-//           Discard the packet
+	// If the A bit is set, the packet MUST be authenticated under the
+	// rules of section 6.7, based on the authentication type in use
+	// (bfd.AuthType). This may cause the packet to be discarded.
 
-//       If received state is AdminDown
-//           If bfd.SessionState is not Down
-//               Set bfd.LocalDiag to 3 (Neighbor signaled
-//                   session down)
-//               Set bfd.SessionState to Down
+	//* FIXME - not implemented
 
-//       Else
+	accepted = true //** we've now passed the above checks and the packet has been accepted
 
-//           If bfd.SessionState is Down
-//               If received State is Down
-//                   Set bfd.SessionState to Init
-//               Else if received State is Init
-//                   Set bfd.SessionState to Up
+	// Set bfd.RemoteDiscr to the value of My Discriminator.
 
-//           Else if bfd.SessionState is Init
-//               If received State is Init or Up
-//                   Set bfd.SessionState to Up
+	bfd.RemoteDiscr = p.myDiscriminator()
 
-//           Else (bfd.SessionState is Up)
-//               If received State is Down
-//                   Set bfd.LocalDiag to 3 (Neighbor signaled
-//                       session down)
-//                   Set bfd.SessionState to Down
+	// Set bfd.RemoteState to the value of the State (Sta) field.
 
-//       Check to see if Demand mode should become active or not (see
-//       section 6.6).
+	bfd.RemoteSessionState = p.state()
 
-//       If bfd.RemoteDemandMode is 1, bfd.SessionState is Up, and
-//       bfd.RemoteSessionState is Up, Demand mode is active on the remote
-//       system and the local system MUST cease the periodic transmission
-//       of BFD Control packets (see section 6.8.7).
+	// Set bfd.RemoteDemandMode to the value of the Demand (D) bit.
 
-// Katz & Ward                  Standards Track                   [Page 35]
-//
-// RFC 5880           Bidirectional Forwarding Detection          June 2010
+	bfd.RemoteDemandMode = p.demand()
 
-//       If bfd.RemoteDemandMode is 0, or bfd.SessionState is not Up, or
-//       bfd.RemoteSessionState is not Up, Demand mode is not active on the
-//       remote system and the local system MUST send periodic BFD Control
-//       packets (see section 6.8.7).
+	// Set bfd.RemoteMinRxInterval to the value of Required Min RX
+	// Interval.
+	bfd.RemoteMinRxInterval = p.requiredMinRxInterval()
 
-//       If the Poll (P) bit is set, send a BFD Control packet to the
-//       remote system with the Poll (P) bit clear, and the Final (F) bit
-//       set (see section 6.8.7).
+	// If the Required Min Echo RX Interval field is zero, the
+	// transmission of Echo packets, if any, MUST cease.
 
-//       If the packet was not discarded, it has been received for purposes
-//       of the Detection Time expiration rules in section 6.8.4.
+	if p.requiredMinEchoRxInterval() == 0 {
+		echo = false
+	}
+
+	// If a Poll Sequence is being transmitted by the local system and
+	// the Final (F) bit in the received packet is set, the Poll
+	// Sequence MUST be terminated.
+
+	if p.final() {
+		poll = false
+	}
+
+	// Update the transmit interval as described in section 6.8.2.
+	bfd._intervalTime, cp = timerNegotiation(bfd, last) // we may have to send a control packet
+
+	//  Update the Detection Time as described in section 6.8.4
+
+	bfd._detectionTime = detectionTime(bfd, 0) //** FIXME - 0
+
+	//bfd._detectionTimer.Reset(bfd._detectionTime * time.Microsecond)
+
+	//       If bfd.SessionState is AdminDown
+
+	//           Discard the packet
+
+	if bfd.SessionState == _AdminDown {
+		return
+	}
+
+	//       If received state is AdminDown
+	//           If bfd.SessionState is not Down
+	//               Set bfd.LocalDiag to 3 (Neighbor signaled
+	//                   session down)
+	//               Set bfd.SessionState to Down
+
+	if p.state() == _AdminDown {
+		if bfd.SessionState != _Down {
+			bfd.LocalDiag = 3
+			bfd.SessionState = _Down
+		}
+	} else {
+
+		//       Else
+
+		//           If bfd.SessionState is Down
+		//               If received State is Down
+		//                   Set bfd.SessionState to Init
+		//               Else if received State is Init
+		//                   Set bfd.SessionState to Up
+
+		//           Else if bfd.SessionState is Init
+		//               If received State is Init or Up
+		//                   Set bfd.SessionState to Up
+
+		//           Else (bfd.SessionState is Up)
+		//               If received State is Down
+		//                   Set bfd.LocalDiag to 3 (Neighbor signaled
+		//                       session down)
+		//                   Set bfd.SessionState to Down
+
+		if bfd.SessionState == _Down {
+			if p.state() == _Down {
+				bfd.SessionState = _Init
+			} else if p.state() == _Init {
+				bfd.SessionState = _Up
+			}
+		} else if bfd.SessionState == _Init {
+			if p.state() == _Init || p.state() == _Up {
+				bfd.SessionState = _Up
+			}
+		} else { // (bfd.SessionState is Up)
+			if p.state() == _Down {
+				bfd.LocalDiag = 3
+				bfd.SessionState = _Down
+			}
+		}
+
+	}
+
+	//       Check to see if Demand mode should become active or not (see
+	//       section 6.6).
+
+	//       If bfd.RemoteDemandMode is 1, bfd.SessionState is Up, and
+	//       bfd.RemoteSessionState is Up, Demand mode is active on the remote
+	//       system and the local system MUST cease the periodic transmission
+	//       of BFD Control packets (see section 6.8.7).
+
+	//       If bfd.RemoteDemandMode is 0, or bfd.SessionState is not Up, or
+	//       bfd.RemoteSessionState is not Up, Demand mode is not active on the
+	//       remote system and the local system MUST send periodic BFD Control
+	//       packets (see section 6.8.7).
+
+	//       If the Poll (P) bit is set, send a BFD Control packet to the
+	//       remote system with the Poll (P) bit clear, and the Final (F) bit
+	//       set (see section 6.8.7).
+
+	//       If the packet was not discarded, it has been received for purposes
+	//       of the Detection Time expiration rules in section 6.8.4.
+
+	if false {
+		print(poll, echo)
+	}
+
+	return
+}
 
 // 6.8.7.  Transmitting BFD Control Packets
+func transmitingBFDControlPackets(bfd stateVariables, last ControlPacket, poll bool) (interval uint32, cp ControlPacket) {
 
-//    With the exceptions listed in the remainder of this section, a system
-//    MUST NOT transmit BFD Control packets at an interval less than the
-//    larger of bfd.DesiredMinTxInterval and bfd.RemoteMinRxInterval, less
-//    applied jitter (see below).  In other words, the system reporting the
-//    slower rate determines the transmission rate.
+	// With the exceptions listed in the remainder of this section, a
+	// system MUST NOT transmit BFD Control packets at an interval
+	// less than the larger of bfd.DesiredMinTxInterval and
+	// bfd.RemoteMinRxInterval, less applied jitter (see below).  In
+	// other words, the system reporting the slower rate determines
+	// the transmission rate.
 
-//    The periodic transmission of BFD Control packets MUST be jittered on
-//    a per-packet basis by up to 25%, that is, the interval MUST be
-//    reduced by a random value of 0 to 25%, in order to avoid self-
-//    synchronization with other systems on the same subnetwork.  Thus, the
-//    average interval between packets will be roughly 12.5% less than that
-//    negotiated.
+	interval = bfd.DesiredMinTxInterval
+	if bfd.RemoteMinRxInterval > interval {
+		interval = bfd.RemoteMinRxInterval
+	}
 
-//    If bfd.DetectMult is equal to 1, the interval between transmitted BFD
-//    Control packets MUST be no more than 90% of the negotiated
-//    transmission interval, and MUST be no less than 75% of the negotiated
-//    transmission interval.  This is to ensure that, on the remote system,
-//    the calculated Detection Time does not pass prior to the receipt of
-//    the next BFD Control packet.
+	// The periodic transmission of BFD Control packets MUST be
+	// jittered on a per-packet basis by up to 25%, that is, the
+	// interval MUST be reduced by a random value of 0 to 25%, in
+	// order to avoid self- synchronization with other systems on the
+	// same subnetwork.  Thus, the average interval between packets
+	// will be roughly 12.5% less than that negotiated.
 
-//    The transmit interval MUST be recalculated whenever
-//    bfd.DesiredMinTxInterval changes, or whenever bfd.RemoteMinRxInterval
-//    changes, and is equal to the greater of those two values.  See
-//    sections 6.8.2 and 6.8.3 for details on transmit timers.
+	jitter := (interval * uint32(rand.Intn(25))) / 100 // 0-25% of rate
 
-//    A system MUST NOT transmit BFD Control packets if bfd.RemoteDiscr is
-//    zero and the system is taking the Passive role.
+	// If bfd.DetectMult is equal to 1, the interval between
+	// transmitted BFD Control packets MUST be no more than 90% of the
+	// negotiated transmission interval, and MUST be no less than 75%
+	// of the negotiated transmission interval.  This is to ensure
+	// that, on the remote system, the calculated Detection Time does
+	// not pass prior to the receipt of the next BFD Control packet.
 
-//    A system MUST NOT periodically transmit BFD Control packets if
-//    bfd.RemoteMinRxInterval is zero.
+	if bfd.DetectMult == 1 {
+		max := (interval * 90) / 100 // 90% of interval
+		min := (interval * 75) / 100 // 75% of interval
 
-// Katz & Ward                  Standards Track                   [Page 36]
-//
-// RFC 5880           Bidirectional Forwarding Detection          June 2010
+		interval -= jitter
 
-//    A system MUST NOT periodically transmit BFD Control packets if Demand
-//    mode is active on the remote system (bfd.RemoteDemandMode is 1,
-//    bfd.SessionState is Up, and bfd.RemoteSessionState is Up) and a Poll
-//    Sequence is not being transmitted.
+		if interval < min {
+			interval = min
+		}
 
-//    If a BFD Control packet is received with the Poll (P) bit set to 1,
-//    the receiving system MUST transmit a BFD Control packet with the Poll
-//    (P) bit clear and the Final (F) bit set as soon as practicable,
-//    without respect to the transmission timer or any other transmission
-//    limitations, without respect to the session state, and without
-//    respect to whether Demand mode is active on either system.  A system
-//    MAY limit the rate at which such packets are transmitted.  If rate
-//    limiting is in effect, the advertised value of Desired Min TX
-//    Interval MUST be greater than or equal to the interval between
-//    transmitted packets imposed by the rate limiting function.
+		if interval > max {
+			interval = max
+		}
 
-//    A system MUST NOT set the Demand (D) bit unless bfd.DemandMode is 1,
-//    bfd.SessionState is Up, and bfd.RemoteSessionState is Up.
+	} else {
+		interval -= jitter
+	}
 
-//    A BFD Control packet SHOULD be transmitted during the interval
-//    between periodic Control packet transmissions when the contents of
-//    that packet would differ from that in the previously transmitted
-//    packet (other than the Poll and Final bits) in order to more rapidly
-//    communicate a change in state.
+	// The transmit interval MUST be recalculated whenever
+	// bfd.DesiredMinTxInterval changes, or whenever
+	// bfd.RemoteMinRxInterval changes, and is equal to the greater of
+	// those two values.  See sections 6.8.2 and 6.8.3 for details on
+	// transmit timers.
 
-//    The contents of transmitted BFD Control packets MUST be set as
-//    follows:
+	// FIXME - IGNORE ABOVE FOR NOW - RECALCULATING EVERY TIME
 
-//    Version
+	// A system MUST NOT transmit BFD Control packets if
+	// bfd.RemoteDiscr is zero and the system is taking the Passive
+	// role.
 
-//       Set to the current version number (1).
+	if bfd.RemoteDiscr == 0 {
+		return 0, nil // FIXME - we are always passive
+	}
 
-//    Diagnostic (Diag)
+	// A system MUST NOT periodically transmit BFD Control packets if
+	// bfd.RemoteMinRxInterval is zero.
 
-//       Set to bfd.LocalDiag.
+	if bfd.RemoteMinRxInterval == 0 {
+		return 0, nil
+	}
 
-//    State (Sta)
+	// A system MUST NOT periodically transmit BFD Control packets if
+	// Demand mode is active on the remote system
+	// (bfd.RemoteDemandMode is 1, bfd.SessionState is Up, and
+	// bfd.RemoteSessionState is Up) and a Poll Sequence is not being
+	// transmitted.
 
-//       Set to the value indicated by bfd.SessionState.
+	if bfd.RemoteDemandMode && bfd.SessionState == _Up && bfd.RemoteSessionState == _Up && !poll {
+		return 0, nil
+	}
 
-//    Poll (P)
+	// If a BFD Control packet is received with the Poll (P) bit set
+	// to 1, the receiving system MUST transmit a BFD Control packet
+	// with the Poll (P) bit clear and the Final (F) bit set as soon
+	// as practicable, without respect to the transmission timer or
+	// any other transmission limitations, without respect to the
+	// session state, and without respect to whether Demand mode is
+	// active on either system.  A system MAY limit the rate at which
+	// such packets are transmitted.  If rate limiting is in effect,
+	// the advertised value of Desired Min TX Interval MUST be greater
+	// than or equal to the interval between transmitted packets
+	// imposed by the rate limiting function.
 
-//       Set to 1 if the local system is sending a Poll Sequence, or 0 if
-//       not.
+	if poll {
+		cp = setControlPacketContents(bfd, false, true)
+		return
+	}
 
-// Katz & Ward                  Standards Track                   [Page 37]
-//
-// RFC 5880           Bidirectional Forwarding Detection          June 2010
+	// A system MUST NOT set the Demand (D) bit unless bfd.DemandMode
+	// is 1, bfd.SessionState is Up, and bfd.RemoteSessionState is Up.
 
-//    Final (F)
+	//** Covered by "Demand (D):" clause in fuction below
 
-//       Set to 1 if the local system is responding to a Control packet
-//       received with the Poll (P) bit set, or 0 if not.
+	// A BFD Control packet SHOULD be transmitted during the
+	// interval between periodic Control packet transmissions
+	// when the contents of that packet would differ from that in
+	// the previously transmitted packet (other than the Poll and
+	// Final bits) in order to more rapidly communicate a change
+	// in state.
 
-//    Control Plane Independent (C)
+	check := setControlPacketContents(bfd, false, false)
 
-//       Set to 1 if the local system's BFD implementation is independent
-//       of the control plane (it can continue to function through a
-//       disruption of the control plane).
+	if len(last) < 24 || diff(last[:], check) {
+		cp = check
+	}
 
-//    Authentication Present (A)
+	//** Section 6.8.7 continues in next function ...
 
-//       Set to 1 if authentication is in use on this session (bfd.AuthType
-//       is nonzero), or 0 if not.
+	return
+}
 
-//    Demand (D)
+func setControlPacketContents(b stateVariables, poll, final bool) []byte {
+	// The contents of transmitted BFD Control packets MUST be set as
+	// follows:
 
-//       Set to bfd.DemandMode if bfd.SessionState is Up and
-//       bfd.RemoteSessionState is Up.  Otherwise, it is set to 0.
+	const (
+		POLL       = 32
+		FINAL      = 16
+		CPI        = 8
+		AUTH       = 4
+		DEMAND     = 2
+		MULTIPOINT = 1
+	)
 
-//    Multipoint (M)
+	var packet [24]byte
 
-//       Set to 0.
+	// Version: Set to the current version number (1).
 
-//    Detect Mult
+	packet[0] = (byte(1) << 5) //** Top 3 bits of the octet
 
-//       Set to bfd.DetectMult.
+	// Diagnostic (Diag): Set to bfd.LocalDiag.
 
-//    Length
+	packet[0] |= (b.LocalDiag & 0x1f) //** Bottom 5 bits (mask of 31)
 
-//       Set to the appropriate length, based on the fixed header length
-//       (24) plus any Authentication Section.
+	// State (Sta): Set to the value indicated by
+	// bfd.SessionState.
 
-//    My Discriminator
+	packet[1] |= byte(b.SessionState << 6) //** Top 2 bits of the octet
 
-//       Set to bfd.LocalDiscr.
+	// Poll (P): Set to 1 if the local system is sending a Poll
+	// Sequence, or 0 if not.
 
-//    Your Discriminator
+	packet[1] |= byte(ternary(poll, POLL, 0))
 
-//       Set to bfd.RemoteDiscr.
+	// Final (F): Set to 1 if the local system is responding to a
+	// Control packet received with the Poll (P) bit set, or 0 if not.
 
-//    Desired Min TX Interval
+	packet[1] |= byte(ternary(final, FINAL, 0))
 
-//       Set to bfd.DesiredMinTxInterval.
+	// Control Plane Independent (C): Set to 1 if the local system's
+	// BFD implementation is independent of the control plane (it can
+	// continue to function through a disruption of the control
+	// plane).
 
-// Katz & Ward                  Standards Track                   [Page 38]
-//
-// RFC 5880           Bidirectional Forwarding Detection          June 2010
+	packet[1] |= byte(ternary(false, CPI, 0))
 
-//    Required Min RX Interval
+	// Authentication Present (A): Set to 1 if authentication is in
+	// use on this session (bfd.AuthType is nonzero), or 0 if not.
 
-//       Set to bfd.RequiredMinRxInterval.
+	packet[1] |= byte(ternary(false, AUTH, 0))
 
-//    Required Min Echo RX Interval
+	// Demand (D): Set to bfd.DemandMode if bfd.SessionState is Up and
+	// bfd.RemoteSessionState is Up.  Otherwise, it is set to 0.
 
-//       Set to the minimum required Echo packet receive interval for this
-//       session.  If this field is set to zero, the local system is
-//       unwilling or unable to loop back BFD Echo packets to the remote
-//       system, and the remote system will not send Echo packets.
+	packet[1] |= byte(ternary(b.DemandMode && b.SessionState == _Up && b.RemoteSessionState == _Up, DEMAND, 0))
 
-//    Authentication Section
+	// Multipoint (M): Set to 0.
 
-//       Included and set according to the rules in section 6.7 if
-//       authentication is in use (bfd.AuthType is nonzero).  Otherwise,
-//       this section is not present.
+	packet[1] |= byte(ternary(false, MULTIPOINT, 0))
+
+	// Detect Mult: Set to bfd.DetectMult.
+
+	packet[2] = b.DetectMult
+
+	// Length: Set to the appropriate length, based on the fixed
+	// header length (24) plus any Authentication Section.
+
+	packet[3] = byte(len(packet))
+
+	// My Discriminator: Set to bfd.LocalDiscr.
+
+	copy(packet[4:8], htonls(b.LocalDiscr))
+
+	// Your Discriminator: Set to bfd.RemoteDiscr.
+
+	copy(packet[8:12], htonls(b.RemoteDiscr))
+
+	// Desired Min TX Interval: Set to bfd.DesiredMinTxInterval.
+
+	copy(packet[12:16], htonls(b.DesiredMinTxInterval))
+
+	// Required Min RX Interval: Set to bfd.RequiredMinRxInterval.
+
+	copy(packet[16:20], htonls(b.RequiredMinRxInterval))
+
+	// Required Min Echo RX Interval: Set to the minimum required Echo
+	// packet receive interval for this session.  If this field is set
+	// to zero, the local system is unwilling or unable to loop back
+	// BFD Echo packets to the remote system, and the remote system
+	// will not send Echo packets.
+
+	copy(packet[20:24], htonls(0))
+
+	// Authentication Section: Included and set according to the rules
+	// in section 6.7 if authentication is in use (bfd.AuthType is
+	// nonzero).  Otherwise, this section is not present.
+
+	/* NOT PRESENT */
+
+	return packet[:]
+}
 
 // 6.8.8.  Reception of BFD Echo Packets
 
@@ -2031,10 +2101,6 @@ func (b stateVariables) bfd(poll, final bool) bfd {
 
 //    The transmission of BFD Echo packets is otherwise outside the scope
 //    of this specification.
-
-// Katz & Ward                  Standards Track                   [Page 39]
-//
-// RFC 5880           Bidirectional Forwarding Detection          June 2010
 
 // 6.8.10.  Min Rx Interval Change
 
@@ -2080,10 +2146,6 @@ func (b stateVariables) bfd(poll, final bool) bfd {
 //    If Demand mode is no longer active on the remote system, the local
 //    system MUST begin transmitting periodic BFD Control packets as
 //    described in section 6.8.7.
-
-// Katz & Ward                  Standards Track                   [Page 40]
-//
-// RFC 5880           Bidirectional Forwarding Detection          June 2010
 
 // 6.8.15.  Forwarding Plane Reset
 
@@ -2132,10 +2194,6 @@ func (b stateVariables) bfd(poll, final bool) bfd {
 //    forward path failures (in which the concatenated path fails in the
 //    direction toward the interworking system), and the second propagates
 
-// Katz & Ward                  Standards Track                   [Page 41]
-//
-// RFC 5880           Bidirectional Forwarding Detection          June 2010
-
 //    reverse path failures (in which the concatenated path fails in the
 //    direction away from the interworking system, assuming a bidirectional
 //    link).
@@ -2180,10 +2238,6 @@ func (b stateVariables) bfd(poll, final bool) bfd {
 //    bfd.RemoteMinRxInterval to its initial value of 1 (per section 6.8.1,
 //    since it is no longer required to maintain previous session state)
 //    and then can transmit at its own rate.
-
-// Katz & Ward                  Standards Track                   [Page 42]
-//
-// RFC 5880           Bidirectional Forwarding Detection          June 2010
 
 // 7.  Operational Considerations
 
@@ -2231,10 +2285,6 @@ func (b stateVariables) bfd(poll, final bool) bfd {
 //    Note that any mechanism that increases the transmit or receive
 //    intervals will increase the Detection Time for the session.
 
-// Katz & Ward                  Standards Track                   [Page 43]
-//
-// RFC 5880           Bidirectional Forwarding Detection          June 2010
-
 //    It is worth noting that a single BFD session does not consume a large
 //    amount of bandwidth.  An aggressive session that achieves a detection
 //    time of 50 milliseconds, by using a transmit interval of 16.7
@@ -2280,10 +2330,6 @@ func (b stateVariables) bfd(poll, final bool) bfd {
 //        4       Keyed SHA1
 //        5       Meticulous Keyed SHA1
 //        6-255   Unassigned
-
-// Katz & Ward                  Standards Track                   [Page 44]
-//
-// RFC 5880           Bidirectional Forwarding Detection          June 2010
 
 // 9.  Security Considerations
 
@@ -2334,10 +2380,6 @@ func (b stateVariables) bfd(poll, final bool) bfd {
 //    the sequence number to be incremented for every packet.  Replay
 //    attack vulnerability is reduced due to the requirement that the
 
-// Katz & Ward                  Standards Track                   [Page 45]
-//
-// RFC 5880           Bidirectional Forwarding Detection          June 2010
-
 //    sequence number must be incremented on every packet, the window size
 //    of acceptable packets is small, and the initial sequence number is
 //    randomized.  There is still a window of attack at the beginning of
@@ -2386,10 +2428,6 @@ func (b stateVariables) bfd(poll, final bool) bfd {
 //    [KEYWORDS] Bradner, S., "Key words for use in RFCs to Indicate
 //               Requirement Levels", BCP 14, RFC 2119, March 1997.
 
-// Katz & Ward                  Standards Track                   [Page 46]
-//
-// RFC 5880           Bidirectional Forwarding Detection          June 2010
-
 //    [MD5]      Rivest, R., "The MD5 Message-Digest Algorithm", RFC 1321,
 //               April 1992.
 
@@ -2408,10 +2446,6 @@ func (b stateVariables) bfd(poll, final bool) bfd {
 //               May 2008.
 
 //    [OSPF]     Moy, J., "OSPF Version 2", STD 54, RFC 2328, April 1998.
-
-// Katz & Ward                  Standards Track                   [Page 47]
-//
-// RFC 5880           Bidirectional Forwarding Detection          June 2010
 
 // Appendix A.  Backward Compatibility (Non-Normative)
 
@@ -2455,10 +2489,6 @@ func (b stateVariables) bfd(poll, final bool) bfd {
 
 //    Kireeti Kompella and Yakov Rekhter of Juniper Networks were also
 //    significant contributors to this document.
-
-// Katz & Ward                  Standards Track                   [Page 48]
-//
-// RFC 5880           Bidirectional Forwarding Detection          June 2010
 
 // Appendix C.  Acknowledgments
 

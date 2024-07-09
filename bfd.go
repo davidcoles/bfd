@@ -127,11 +127,11 @@ func (b *BFD) Start() error {
 				c, ok := sessions[b.addr]
 
 				if !ok {
-					xmit, err := udp(b.addr)
+					ctx, cancel := context.WithCancel(context.TODO())
+					c, err = session{bfd: udpSession(b.addr, cancel), ctx: ctx}
 					if err != nil {
-						break // update a failed counter here?
+						break
 					}
-					c = startSession(xmit)
 					sessions[b.addr] = c
 				}
 
@@ -147,6 +147,81 @@ func (b *BFD) Start() error {
 	}()
 
 	return nil
+}
+
+func loop(recv, xmit chan ControlPacket) {
+
+	var tx uint32 = 200 // ms
+	var rx uint32 = 100 // ms
+
+	bfd := stateVariables{
+		SessionState:          _Down,
+		LocalDiscr:            rand.Uint32(),
+		DesiredMinTxInterval:  tx * 1000, // convert to BFD timer unit (μs)
+		RequiredMinRxInterval: rx * 1000, // convert to BFD timer unit (μs)
+		DetectMult:            5,
+		LocalDiag:             1,
+		_intervalTime:         time.Duration(tx) * 1000, // convert to BFD timer unit (μs)
+		_detectionTime:        1000000,                  // 1s (1m microseconds)
+	}
+
+	intervalTimer := time.NewTimer(bfd._intervalTime * time.Microsecond)
+	detectionTimer := time.NewTimer(bfd._detectionTime * time.Microsecond)
+
+	defer func() {
+		intervalTimer.Stop()
+		detectionTimer.Stop()
+		fmt.Println("!")
+	}()
+
+	var last ControlPacket
+
+	for {
+
+		fmt.Print(".")
+
+		select {
+
+		case <-detectionTimer.C:
+			return
+
+		case <-intervalTimer.C:
+			last = setControlPacketContents(bfd, false, false)
+			xmit <- last
+			if bfd._intervalTime > 0 {
+				intervalTimer.Reset(bfd._intervalTime * time.Microsecond)
+			}
+
+		case p, ok := <-recv:
+
+			if !ok {
+				return
+			}
+
+			var cp ControlPacket
+			bfd, cp, ok = receptionOfBFDControlPackets(bfd, p, last)
+
+			if ok {
+				if !detectionTimer.Stop() {
+					<-detectionTimer.C
+				}
+				detectionTimer.Reset(bfd._detectionTime * time.Microsecond)
+			}
+
+			if len(last) < 24 {
+				if !intervalTimer.Stop() {
+					<-intervalTimer.C
+				}
+				// fire now so timer can be reset to negotiated interval
+				intervalTimer.Reset(1)
+			}
+
+			if len(cp) > 0 {
+				last = cp
+				xmit <- last
+			}
+		}
+	}
 }
 
 func udp(addr netip.Addr) (chan bfd, error) {
@@ -206,10 +281,36 @@ type session struct {
 	ctx context.Context
 }
 
+func udpSession(addr netip.Addr, cancel context.CancelFunc) chan bfd {
+
+	xmit, err := udp(addr)
+
+	if err != nil {
+		return nil, err
+	}
+
+	recv := make(chan bfd, 1000)
+
+	go func() {
+		loop(recv, xmit, cancel)
+		defer close(xmit)
+		defer cancel()
+	}()
+
+	return recv, nil
+}
+
 func startSession(xmit chan bfd) session {
 
 	recv := make(chan bfd, 1000)
 	ctx, cancel := context.WithCancel(context.TODO())
+
+	go func() {
+		loop(recv, xmit, cancel)
+		defer close(xmit)
+		defer cancel()
+	}()
+	return session{bfd: recv, ctx: ctx}
 
 	go func() {
 		var tx uint32 = 50 // ms
