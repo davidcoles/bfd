@@ -2,17 +2,98 @@ package bfd
 
 import (
 	"math/rand"
+	"sync/atomic"
 	"time"
 )
 
 type state uint8
 
 const (
-	_AdminDown state = 0
-	_Down      state = 1
-	_Init      state = 2
-	_Up        state = 3
+	AdminDown state = 0
+	Down      state = 1
+	Init      state = 2
+	Up        state = 3
 )
+
+func loop(recv <-chan ControlPacket, xmit chan<- ControlPacket, localDiscr uint32, up *atomic.Bool) {
+
+	var tx uint32 = 200 // ms
+	var rx uint32 = 100 // ms
+
+	bfd := stateVariables{
+		SessionState:          Down,
+		LocalDiscr:            localDiscr,
+		DesiredMinTxInterval:  tx * 1000, // convert to BFD timer unit (μs)
+		RequiredMinRxInterval: rx * 1000, // convert to BFD timer unit (μs)
+		DetectMult:            5,
+		LocalDiag:             1,
+		_intervalTime:         time.Duration(tx * 1000), // convert to BFD timer unit (μs)
+		_detectionTime:        1000000,                  // 1s (1m microseconds)
+	}
+
+	intervalTimer := time.NewTimer(bfd._intervalTime * time.Microsecond)
+	detectionTimer := time.NewTimer(bfd._detectionTime * time.Microsecond)
+
+	defer func() {
+		intervalTimer.Stop()
+		detectionTimer.Stop()
+	}()
+
+	var last ControlPacket
+
+	for {
+
+		if up != nil {
+			up.Store(bfd.SessionState == Up)
+		}
+
+		select {
+
+		case <-detectionTimer.C:
+			//bfd.SessionState = Down
+			//bfd.LocalDiag = 1
+			//last = nil
+			return
+
+		case <-intervalTimer.C:
+			last = setControlPacketContents(bfd, false, false)
+			xmit <- last
+			if bfd._intervalTime > 0 {
+				intervalTimer.Reset(bfd._intervalTime * time.Microsecond)
+			}
+
+		case p, ok := <-recv:
+
+			if !ok {
+				return
+			}
+
+			var cp ControlPacket
+			bfd, cp, ok = receptionOfBFDControlPackets(bfd, p, last)
+
+			if ok {
+				if !detectionTimer.Stop() {
+					<-detectionTimer.C
+				}
+				detectionTimer.Reset(bfd._detectionTime * time.Microsecond)
+			}
+
+			if len(last) < 24 {
+				if !intervalTimer.Stop() {
+					<-intervalTimer.C
+				}
+				// fire now so timer can be reset to negotiated interval
+				intervalTimer.Reset(1)
+			}
+
+			// we may need to send an immediate response packet
+			if cp != nil {
+				last = cp
+				xmit <- last
+			}
+		}
+	}
+}
 
 type stateVariables struct {
 	_intervalTime  time.Duration
@@ -35,25 +116,63 @@ type stateVariables struct {
 	//AuthSeqKnown
 }
 
-type ControlPacket = bfd
-type bfd []byte
+//func ntohls(n []byte) uint32 { return ntohl([4]byte{n[0], n[1], n[2], n[3]}) }
+func ntohl(n [4]byte) uint32 {
+	return uint32(n[0])<<24 |
+		uint32(n[1])<<16 |
+		uint32(n[2])<<8 |
+		uint32(n[3])
+}
 
-func (b bfd) version() uint8                    { return b[0] >> 5 }
-func (b bfd) diag() uint8                       { return b[0] & 31 }
-func (b bfd) state() state                      { return state(b[1] >> 6) }
-func (b bfd) poll() bool                        { return b[1]&32 > 0 }
-func (b bfd) final() bool                       { return b[1]&16 > 0 }
-func (b bfd) cpi() bool                         { return b[1]&8 > 0 }
-func (b bfd) authentication() bool              { return b[1]&4 > 0 }
-func (b bfd) demand() bool                      { return b[1]&2 > 0 }
-func (b bfd) multipoint() bool                  { return b[1]&1 > 0 }
-func (b bfd) detectMult() uint8                 { return b[2] }
-func (b bfd) length() uint8                     { return b[3] }
-func (b bfd) myDiscriminator() uint32           { return ntohl([4]byte(b[4:8])) }
-func (b bfd) yourDiscriminator() uint32         { return ntohl([4]byte(b[8:12])) }
-func (b bfd) desiredMinTxInterval() uint32      { return ntohl([4]byte(b[12:16])) }
-func (b bfd) requiredMinRxInterval() uint32     { return ntohl([4]byte(b[16:20])) }
-func (b bfd) requiredMinEchoRxInterval() uint32 { return ntohl([4]byte(b[20:24])) }
+func htonls(n uint32) []byte { r := htonl(n); return r[:] }
+func htonl(n uint32) (r [4]byte) {
+	r[0] = byte(n >> 24)
+	r[1] = byte(n >> 16)
+	r[2] = byte(n >> 8)
+	r[3] = byte(n)
+	return
+}
+
+func ternary(c bool, t, f int) int {
+	if c {
+		return t
+	}
+	return f
+}
+
+func diff(a, b []byte) bool {
+	var x, y [24]byte
+
+	if len(a) < 24 || len(b) < 24 {
+		return true
+	}
+
+	copy(x[:], a[:])
+	copy(y[:], b[:])
+
+	x[1] &= 0xcf // mask off poll+final
+	y[1] &= 0xcf // mask off poll+final
+	return x != y
+}
+
+type ControlPacket []byte
+
+func (b ControlPacket) version() uint8                    { return b[0] >> 5 }
+func (b ControlPacket) diag() uint8                       { return b[0] & 31 }
+func (b ControlPacket) state() state                      { return state(b[1] >> 6) }
+func (b ControlPacket) poll() bool                        { return b[1]&32 > 0 }
+func (b ControlPacket) final() bool                       { return b[1]&16 > 0 }
+func (b ControlPacket) cpi() bool                         { return b[1]&8 > 0 }
+func (b ControlPacket) authentication() bool              { return b[1]&4 > 0 }
+func (b ControlPacket) demand() bool                      { return b[1]&2 > 0 }
+func (b ControlPacket) multipoint() bool                  { return b[1]&1 > 0 }
+func (b ControlPacket) detectMult() uint8                 { return b[2] }
+func (b ControlPacket) length() uint8                     { return b[3] }
+func (b ControlPacket) myDiscriminator() uint32           { return ntohl([4]byte(b[4:8])) }
+func (b ControlPacket) yourDiscriminator() uint32         { return ntohl([4]byte(b[8:12])) }
+func (b ControlPacket) desiredMinTxInterval() uint32      { return ntohl([4]byte(b[12:16])) }
+func (b ControlPacket) requiredMinRxInterval() uint32     { return ntohl([4]byte(b[16:20])) }
+func (b ControlPacket) requiredMinEchoRxInterval() uint32 { return ntohl([4]byte(b[20:24])) }
 
 //  0                   1                   2                   3
 //  0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
@@ -70,28 +189,6 @@ func (b bfd) requiredMinEchoRxInterval() uint32 { return ntohl([4]byte(b[20:24])
 // +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
 // |                 Required Min Echo RX Interval                 |
 // +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-
-func (b stateVariables) bfd(poll, final bool) bfd {
-	var r [24]byte
-
-	r[0] = (byte(1) << 5) | b.LocalDiag
-	r[1] |= byte(b.SessionState << 6)
-	r[1] |= byte(ternary(poll, 32, 0))  // Poll (P)
-	r[1] |= byte(ternary(final, 16, 0)) // Final (F)
-	//r[1] |= 8 // Control Plane Independent (C)
-	//r[1] |= 4 // Authentication Present (A)
-	r[1] |= byte(ternary(b.DemandMode && b.SessionState == _Up && b.RemoteSessionState == _Up, 2, 0)) // Demand (D)
-	// r[1] |= 1 // Multipoint (M) - Set to 0
-	r[2] = b.DetectMult
-	r[3] = byte(len(r))
-
-	copy(r[4:8], htonls(b.LocalDiscr))
-	copy(r[8:12], htonls(b.RemoteDiscr))
-	copy(r[12:16], htonls(b.DesiredMinTxInterval))
-	copy(r[16:20], htonls(b.RequiredMinRxInterval))
-	copy(r[20:24], htonls(0)) // If this field is set to zero, the local system is unwilling or unable to loop back BFD Echo
-	return r[:]
-}
 
 // Internet Engineering Task Force (IETF)                           D. Katz
 // Request for Comments: 5880                                       D. Ward
@@ -1576,7 +1673,7 @@ func detectionTime(bfd stateVariables, lastReceivedDesiredMinTxInterval uint32) 
 	// packets that have to be missed in a row to declare the session
 	// to be down.
 
-	//** FIXME - asynchronousMode is defeine as not being in demand mode?
+	//** FIXME - asynchronousMode is defined as not being in demand mode?
 
 	if !demandMode {
 		if lastReceivedDesiredMinTxInterval > bfd.RequiredMinRxInterval {
@@ -1630,6 +1727,7 @@ func detectionTime(bfd stateVariables, lastReceivedDesiredMinTxInterval uint32) 
 
 // 6.8.6.  Reception of BFD Control Packets
 func receptionOfBFDControlPackets(state stateVariables, p, last ControlPacket) (bfd stateVariables, cp []byte, accepted bool) {
+
 	var poll, echo bool
 
 	bfd = state
@@ -1688,7 +1786,7 @@ func receptionOfBFDControlPackets(state stateVariables, p, last ControlPacket) (
 	// If the Your Discriminator field is zero and the State field is not
 	// Down or AdminDown, the packet MUST be discarded.
 
-	if p.yourDiscriminator() == 0 && (p.state() != _Down && p.state() != _AdminDown) {
+	if p.yourDiscriminator() == 0 && (p.state() != Down && p.state() != AdminDown) {
 		return
 	}
 
@@ -1770,20 +1868,20 @@ func receptionOfBFDControlPackets(state stateVariables, p, last ControlPacket) (
 
 	//           Discard the packet
 
-	if bfd.SessionState == _AdminDown {
+	if bfd.SessionState == AdminDown {
 		return
 	}
 
-	//       If received state is AdminDown
-	//           If bfd.SessionState is not Down
-	//               Set bfd.LocalDiag to 3 (Neighbor signaled
-	//                   session down)
-	//               Set bfd.SessionState to Down
+	if p.state() == AdminDown {
+		//       If received state is AdminDown
+		//           If bfd.SessionState is not Down
+		//               Set bfd.LocalDiag to 3 (Neighbor signaled
+		//                   session down)
+		//               Set bfd.SessionState to Down
 
-	if p.state() == _AdminDown {
-		if bfd.SessionState != _Down {
+		if bfd.SessionState != Down {
 			bfd.LocalDiag = 3
-			bfd.SessionState = _Down
+			bfd.SessionState = Down
 		}
 	} else {
 
@@ -1805,20 +1903,20 @@ func receptionOfBFDControlPackets(state stateVariables, p, last ControlPacket) (
 		//                       session down)
 		//                   Set bfd.SessionState to Down
 
-		if bfd.SessionState == _Down {
-			if p.state() == _Down {
-				bfd.SessionState = _Init
-			} else if p.state() == _Init {
-				bfd.SessionState = _Up
+		if bfd.SessionState == Down {
+			if p.state() == Down {
+				bfd.SessionState = Init
+			} else if p.state() == Init {
+				bfd.SessionState = Up
 			}
-		} else if bfd.SessionState == _Init {
-			if p.state() == _Init || p.state() == _Up {
-				bfd.SessionState = _Up
+		} else if bfd.SessionState == Init {
+			if p.state() == Init || p.state() == Up {
+				bfd.SessionState = Up
 			}
 		} else { // (bfd.SessionState is Up)
-			if p.state() == _Down {
+			if p.state() == Down {
 				bfd.LocalDiag = 3
-				bfd.SessionState = _Down
+				bfd.SessionState = Down
 			}
 		}
 
@@ -1929,7 +2027,7 @@ func transmitingBFDControlPackets(bfd stateVariables, last ControlPacket, poll b
 	// bfd.RemoteSessionState is Up) and a Poll Sequence is not being
 	// transmitted.
 
-	if bfd.RemoteDemandMode && bfd.SessionState == _Up && bfd.RemoteSessionState == _Up && !poll {
+	if bfd.RemoteDemandMode && bfd.SessionState == Up && bfd.RemoteSessionState == Up && !poll {
 		return 0, nil
 	}
 
@@ -1964,7 +2062,7 @@ func transmitingBFDControlPackets(bfd stateVariables, last ControlPacket, poll b
 
 	check := setControlPacketContents(bfd, false, false)
 
-	if len(last) < 24 || diff(last[:], check) {
+	if len(last) < 24 || diff(last, check) {
 		cp = check
 	}
 
@@ -2026,7 +2124,7 @@ func setControlPacketContents(b stateVariables, poll, final bool) []byte {
 	// Demand (D): Set to bfd.DemandMode if bfd.SessionState is Up and
 	// bfd.RemoteSessionState is Up.  Otherwise, it is set to 0.
 
-	packet[1] |= byte(ternary(b.DemandMode && b.SessionState == _Up && b.RemoteSessionState == _Up, DEMAND, 0))
+	packet[1] |= byte(ternary(b.DemandMode && b.SessionState == Up && b.RemoteSessionState == Up, DEMAND, 0))
 
 	// Multipoint (M): Set to 0.
 
