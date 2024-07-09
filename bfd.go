@@ -128,10 +128,11 @@ func (b *BFD) Start() error {
 
 				if !ok {
 					ctx, cancel := context.WithCancel(context.TODO())
-					c, err = session{bfd: udpSession(b.addr, cancel), ctx: ctx}
+					bfd, err := udpSession(b.addr, cancel)
 					if err != nil {
 						break
 					}
+					c = session{bfd: bfd, ctx: ctx}
 					sessions[b.addr] = c
 				}
 
@@ -281,7 +282,7 @@ type session struct {
 	ctx context.Context
 }
 
-func udpSession(addr netip.Addr, cancel context.CancelFunc) chan bfd {
+func udpSession(addr netip.Addr, cancel context.CancelFunc) (chan bfd, error) {
 
 	xmit, err := udp(addr)
 
@@ -292,7 +293,7 @@ func udpSession(addr netip.Addr, cancel context.CancelFunc) chan bfd {
 	recv := make(chan bfd, 1000)
 
 	go func() {
-		loop(recv, xmit, cancel)
+		loop(recv, xmit)
 		defer close(xmit)
 		defer cancel()
 	}()
@@ -304,13 +305,6 @@ func startSession(xmit chan bfd) session {
 
 	recv := make(chan bfd, 1000)
 	ctx, cancel := context.WithCancel(context.TODO())
-
-	go func() {
-		loop(recv, xmit, cancel)
-		defer close(xmit)
-		defer cancel()
-	}()
-	return session{bfd: recv, ctx: ctx}
 
 	go func() {
 		var tx uint32 = 50 // ms
